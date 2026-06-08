@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCR Engine</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f4f0;
+      --surface: #ffffff;
+      --surface-2: #f8f7f4;
+      --border: rgba(0,0,0,0.1);
+      --border-md: rgba(0,0,0,0.18);
+      --text: #1a1917;
+      --text-2: #6b6a67;
+      --text-3: #a09f9c;
+      --blue: #185fa5;
+      --blue-bg: #e6f1fb;
+      --blue-text: #0c447c;
+      --green: #3b6d11;
+      --green-bg: #eaf3de;
+      --green-text: #27500a;
+      --amber: #854f0b;
+      --amber-bg: #faeeda;
+      --amber-text: #633806;
+      --red: #a32d2d;
+      --red-bg: #fcebeb;
+      --red-text: #791f1f;
+      --warn-bg: #faeeda;
+      --warn-border: rgba(133,79,11,0.4);
+      --radius: 8px;
+      --radius-lg: 12px;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1a1917;
+        --surface: #242321;
+        --surface-2: #2c2b28;
+        --border: rgba(255,255,255,0.1);
+        --border-md: rgba(255,255,255,0.18);
+        --text: #f0ede8;
+        --text-2: #a09f9c;
+        --text-3: #6b6a67;
+        --blue-bg: #0c2a47;
+        --blue-text: #85b7eb;
+        --green-bg: #173404;
+        --green-text: #c0dd97;
+        --amber-bg: #412402;
+        --amber-text: #fac775;
+        --red-bg: #501313;
+        --red-text: #f09595;
+        --warn-bg: #412402;
+        --warn-border: rgba(250,199,117,0.35);
+      }
+    }
+
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    /* ---- Layout ---- */
+    .app-header {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border);
+      padding: 0 24px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 500; }
+    .logo i { font-size: 20px; color: var(--blue); }
+    .engine-badge {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: var(--blue-bg);
+      color: var(--blue-text);
+      font-weight: 500;
+    }
+    .main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ---- Cards ---- */
+    .card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 10px 16px;
+      border-bottom: 0.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface-2);
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-2);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .card-title i { font-size: 14px; }
+
+    /* ---- Dual pane ---- */
+    .dual-pane { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.5fr); gap: 16px; align-items: start; }
+    @media (max-width: 768px) { .dual-pane { grid-template-columns: 1fr; } }
+
+    /* ---- Drop zone ---- */
+    .drop-zone {
+      border: 1.5px dashed var(--border-md);
+      border-radius: var(--radius-lg);
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      text-align: center;
+      background: var(--surface-2);
+      min-height: 180px;
+      justify-content: center;
+    }
+    .drop-zone:hover, .drop-zone.drag { background: var(--blue-bg); border-color: var(--blue); }
+    .drop-zone i { font-size: 34px; color: var(--text-3); transition: color 0.15s; }
+    .drop-zone:hover i, .drop-zone.drag i { color: var(--blue); }
+    .drop-zone .hint { font-size: 13px; color: var(--text-2); }
+    .drop-zone .hint b { font-weight: 500; color: var(--text); }
+    .drop-zone .sub { font-size: 11px; color: var(--text-3); }
+
+    /* ---- Image preview ---- */
+    .preview-wrap { padding: 14px; }
+    #img-preview { width: 100%; max-height: 340px; object-fit: contain; border-radius: var(--radius); display: block; }
+    .file-meta { font-size: 11px; color: var(--text-3); margin-top: 8px; text-align: center; }
+
+    /* ---- Scanning state ---- */
+    .scanning {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      padding: 40px 20px; color: var(--text-2);
+    }
+    .scanning i { font-size: 28px; }
+    .scan-label { font-size: 13px; }
+    .scan-track { width: 160px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .scan-fill { height: 100%; background: var(--blue); border-radius: 2px; width: 0; transition: width 1.3s ease-in-out; }
+
+    /* ---- Extraction table ---- */
+    .field-row {
+      display: grid;
+      grid-template-columns: 130px 1fr 62px;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 16px;
+      border-bottom: 0.5px solid var(--border);
+    }
+    .field-row:last-child { border-bottom: none; }
+    .field-label { font-size: 11px; font-weight: 500; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+    .field-input {
+      width: 100%;
+      background: var(--surface-2);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      font-size: 13px;
+      color: var(--text);
+      font-family: var(--font);
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .field-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(24,95,165,0.12); }
+    .field-input.modified { border-color: var(--warn-border); background: var(--warn-bg); }
+    .field-input.mem-applied { border-color: rgba(59,109,17,0.4); background: var(--green-bg); }
+    .conf-badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 999px;
+      text-align: center;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .conf-high { background: var(--green-bg); color: var(--green-text); }
+    .conf-mid  { background: var(--amber-bg); color: var(--amber-text); }
+    .conf-low  { background: var(--red-bg);   color: var(--red-text); }
+
+    /* ---- Empty / error states ---- */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 10px; padding: 48px 20px; min-height: 200px;
+    }
+    .empty-state i { font-size: 28px; color: var(--text-3); }
+    .empty-state p { font-size: 13px; color: var(--text-3); text-align: center; }
+    .error-banner {
+      background: var(--red-bg); color: var(--red-text);
+      padding: 10px 16px; font-size: 13px; border-bottom: 0.5px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ---- Validate button ---- */
+    .validate-btn {
+      width: 100%;
+      padding: 11px 16px;
+      background: var(--surface);
+      border: 0.5px solid var(--border-md);
+      border-radius: var(--radius-lg);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background 0.15s;
+      font-family: var(--font);
+    }
+    .validate-btn:hover { background: var(--surface-2); }
+    .validate-btn:active { transform: scale(0.98); }
+    .validate-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .validate-btn.ok { border-color: rgba(59,109,17,0.5); color: var(--green-text); background: var(--green-bg); }
+
+    /* ---- Memory panel ---- */
+    .memory-panel { background: var(--surface); border: 0.5px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+    .memory-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 0.5px solid var(--border);
+      background: var(--surface-2);
+    }
+    .mem-badge { font-size: 11px; padding: 2px 9px; border-radius: 999px; background: var(--blue-bg); color: var(--blue-text); font-weight: 500; }
+    .json-view { font-family: var(--mono); font-size: 12px; padding: 14px 18px; color: var(--text-2); line-height: 1.75; overflow-x: auto; white-space: pre; min-height: 72px; }
+    .jk { color: var(--blue); }
+    .jv { color: var(--green); }
+    .je { color: var(--text-3); font-style: italic; }
+    .mem-footer { font-size: 11px; color: var(--text-3); padding: 7px 16px; border-top: 0.5px solid var(--border); display: flex; align-items: center; gap: 7px; }
+    .pulse { width: 7px; height: 7px; border-radius: 50%; background: #639922; display: inline-block; flex-shrink: 0; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+    /* ---- Icon button ---- */
+    .icon-btn { background: none; border: none; cursor: pointer; color: var(--text-3); padding: 4px; border-radius: 5px; transition: color 0.15s, background 0.15s; }
+    .icon-btn:hover { color: var(--text); background: var(--border); }
+    .icon-btn i { font-size: 15px; display: block; }
+
+    /* ---- Tooltip ---- */
+    [title] { position: relative; }
+
+    /* ---- Animations ---- */
+    .flash-green { animation: flashG 0.45s ease; }
+    @keyframes flashG { 0%{background:var(--green-bg)} 100%{background:transparent} }
+  </style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="logo">
+    <i class="ti ti-scan" aria-hidden="true"></i>
+    OCR Engine
+  </div>
+  <span class="engine-badge" id="engine-badge">loading…</span>
+</header>
+
+<main class="main">
+
+  <div class="dual-pane">
+
+    <!-- Left pane: upload + image -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="card" id="upload-card">
+        <div
+          id="drop-zone"
+          class="drop-zone"
+          tabindex="0"
+          role="button"
+          aria-label="Upload image for OCR"
+          onclick="document.getElementById('file-input').click()"
+          ondragover="doDragOver(event)"
+          ondragleave="doDragLeave(event)"
+          ondrop="doDrop(event)"
+          onkeydown="if(event.key==='Enter')this.click()"
+        >
+          <i class="ti ti-upload" aria-hidden="true"></i>
+          <div class="hint"><b>Drop an image here</b></div>
+          <div class="sub">or click to browse &mdash; PNG, JPG, TIFF, PDF</div>
+        </div>
+        <input id="file-input" type="file" accept="image/*,.pdf" style="display:none" onchange="handleFile(this.files[0])">
+
+        <div id="preview-area" style="display:none">
+          <div class="preview-wrap">
+            <img id="img-preview" alt="Uploaded document preview">
+            <div id="file-meta" class="file-meta"></div>
+          </div>
+        </div>
+      </div>
+
+      <button class="validate-btn" id="validate-btn" style="display:none" onclick="validateAndLearn()">
+        <i class="ti ti-brain" aria-hidden="true"></i>
+        Validate &amp; update model memory
+      </button>
+    </div>
+
+    <!-- Right pane: extraction results -->
+    <div class="card" id="result-card">
+      <div class="card-header" id="result-header" style="display:none">
+        <div class="card-title">
+          <i class="ti ti-list-details" aria-hidden="true"></i>
+          Extracted fields
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:11px;color:var(--text-3)" id="field-count"></span>
+          <button class="icon-btn" onclick="resetAll()" title="Clear and start over" aria-label="Clear">
+            <i class="ti ti-refresh" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="empty-state" class="empty-state">
+        <i class="ti ti-file-search" aria-hidden="true"></i>
+        <p>Drop an image on the left to begin extraction</p>
+      </div>
+
+      <div id="scanning-state" style="display:none" class="scanning">
+        <i class="ti ti-scan" aria-hidden="true"></i>
+        <div class="scan-label">Extracting text and fields…</div>
+        <div class="scan-track"><div class="scan-fill" id="scan-fill"></div></div>
+      </div>
+
+      <div id="error-state" style="display:none" class="error-banner">
+        <i class="ti ti-alert-circle" aria-hidden="true"></i>
+        <span id="error-msg"></span>
+      </div>
+
+      <div id="fields-table" style="display:none"></div>
+    </div>
+
+  </div>
+
+  <!-- Memory panel -->
+  <div class="memory-panel">
+    <div class="memory-header">
+      <div class="card-title">
+        <i class="ti ti-brain" style="font-size:15px" aria-hidden="true"></i>
+        Local vector memory
+        <span class="mem-badge" id="mem-count">0 entries</span>
+      </div>
+      <div style="display:flex;gap:4px">
+        <button class="icon-btn" onclick="refreshMemory()" title="Refresh" aria-label="Refresh memory">
+          <i class="ti ti-refresh" aria-hidden="true"></i>
+        </button>
+        <button class="icon-btn" onclick="clearMemory()" title="Clear all corrections" aria-label="Clear memory">
+          <i class="ti ti-trash" aria-hidden="true"></i>
+        </button>
+      </div>
+    </div>
+    <div class="json-view" id="mem-view">
+      <span class="je">// No corrections recorded yet. Edit any field and click validate.</span>
+    </div>
+    <div class="mem-footer">
+      <span class="pulse" aria-hidden="true"></span>
+      Active correction dictionary — applied automatically on next extraction
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const API = window.location.origin;  // same-origin: FastAPI serves both
+
+  let currentFields = [];  // { field, raw_value, display_value, confidence, memory_corrected }
+
+  // ------------------------------------------------------------------ //
+  //  Boot
+  // ------------------------------------------------------------------ //
+  async function boot() {
+    try {
+      const r = await fetch(API + '/health');
+      const d = await r.json();
+      document.getElementById('engine-badge').textContent =
+        d.engine === 'claude-vision' ? '✦ Claude Vision' : '⚙ Tesseract';
+    } catch {
+      document.getElementById('engine-badge').textContent = 'offline';
+      document.getElementById('engine-badge').style.background = 'var(--red-bg)';
+      document.getElementById('engine-badge').style.color = 'var(--red-text)';
+    }
+    await refreshMemory();
+  }
+  boot();
+
+  // ------------------------------------------------------------------ //
+  //  Drag & drop
+  // ------------------------------------------------------------------ //
+  function doDragOver(e) {
+    e.preventDefault();
+    document.getElementById('drop-zone').classList.add('drag');
+  }
+  function doDragLeave() {
+    document.getElementById('drop-zone').classList.remove('drag');
+  }
+  function doDrop(e) {
+    e.preventDefault();
+    doDragLeave();
+    const f = e.dataTransfer.files[0];
+    if (f) handleFile(f);
+  }
+
+  // ------------------------------------------------------------------ //
+  //  File handling
+  // ------------------------------------------------------------------ //
+  function handleFile(file) {
+    if (!file) return;
+
+    // Show preview
+    document.getElementById('drop-zone').style.display = 'none';
+    document.getElementById('preview-area').style.display = 'block';
+    const reader = new FileReader();
+    reader.onload = e => {
+      document.getElementById('img-preview').src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+    document.getElementById('file-meta').textContent =
+      file.name + ' — ' + (file.size / 1024).toFixed(0) + ' KB';
+
+    // Start extraction
+    startExtraction(file);
+  }
+
+  // ------------------------------------------------------------------ //
+  //  Extraction
+  // ------------------------------------------------------------------ //
+  async function startExtraction(file) {
+    setResultState('scanning');
+    document.getElementById('validate-btn').style.display = 'none';
+
+    // Animate scan bar
+    const fill = document.getElementById('scan-fill');
+    fill.style.width = '0';
+    setTimeout(() => fill.style.width = '80%', 50);
+
+    const fd = new FormData();
+    fd.append('file', file);
+
+    try {
+      const r = await fetch(API + '/ocr/extract', { method: 'POST', body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({ detail: r.statusText }));
+        throw new Error(err.detail || r.statusText);
+      }
+      fill.style.width = '100%';
+      const data = await r.json();
+      currentFields = data.fields;
+      setTimeout(() => renderTable(data.fields), 300);
+    } catch (err) {
+      setResultState('error', err.message);
+    }
+  }
+
+  // ------------------------------------------------------------------ //
+  //  Render
+  // ------------------------------------------------------------------ //
+  function confClass(c) {
+    return c >= 85 ? 'conf-high' : c >= 65 ? 'conf-mid' : 'conf-low';
+  }
+
+  function renderTable(fields) {
+    const table = document.getElementById('fields-table');
+    let html = '';
+    fields.forEach((f, i) => {
+      const cls = f.memory_corrected ? 'mem-applied' : '';
+      const tip = f.memory_corrected
+        ? `title="Auto-corrected from memory (raw: ${esc(f.raw_value)})"`
+        : `title="Raw OCR: ${esc(f.raw_value)}"`;
+      html += `
+        <div class="field-row">
+          <div class="field-label" title="${esc(f.field)}">${esc(f.field)}</div>
+          <input
+            class="field-input ${cls}"
+            id="fi_${i}"
+            value="${esc(f.display_value)}"
+            ${tip}
+            oninput="markDirty(${i}, this)"
+          >
+          <span class="conf-badge ${confClass(f.confidence)}" title="Confidence: ${f.confidence}%">
+            ${f.confidence}%
+          </span>
+        </div>`;
+    });
+    table.innerHTML = html;
+
+    document.getElementById('field-count').textContent = fields.length + ' fields';
+    setResultState('table');
+    document.getElementById('validate-btn').style.display = 'flex';
+  }
+
+  function markDirty(i, el) {
+    el.classList.remove('mem-applied');
+    el.classList.add('modified');
+    currentFields[i].display_value = el.value;
+  }
+
+  // ------------------------------------------------------------------ //
+  //  Validate & learn
+  // ------------------------------------------------------------------ //
+  async function validateAndLearn() {
+    const corrections = {};
+    currentFields.forEach((f, i) => {
+      const el = document.getElementById('fi_' + i);
+      const userVal = el ? el.value.trim() : f.display_value;
+      if (userVal && userVal !== f.raw_value && f.raw_value.trim()) {
+        corrections[f.raw_value] = userVal;
+      }
+    });
+
+    const btn = document.getElementById('validate-btn');
+    btn.disabled = true;
+
+    try {
+      const r = await fetch(API + '/ocr/correct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ corrections }),
+      });
+      const d = await r.json();
+
+      btn.classList.add('ok');
+      btn.innerHTML = `<i class="ti ti-check" aria-hidden="true"></i> ${d.new_entries} correction${d.new_entries !== 1 ? 's' : ''} saved`;
+
+      // Flash corrected inputs
+      document.querySelectorAll('.field-input.modified').forEach(el => {
+        el.classList.remove('modified');
+        el.classList.add('flash-green');
+        setTimeout(() => el.classList.remove('flash-green'), 500);
+      });
+
+      await refreshMemory();
+    } catch (err) {
+      btn.textContent = 'Error saving — try again';
+    }
+
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.classList.remove('ok');
+      btn.innerHTML = '<i class="ti ti-brain" aria-hidden="true"></i> Validate &amp; update model memory';
+    }, 2600);
+  }
+
+  // ------------------------------------------------------------------ //
+  //  Memory
+  // ------------------------------------------------------------------ //
+  async function refreshMemory() {
+    try {
+      const r = await fetch(API + '/ocr/memory');
+      const d = await r.json();
+      renderMemory(d.corrections);
+    } catch { /* offline — silently skip */ }
+  }
+
+  function renderMemory(corrections) {
+    const keys = Object.keys(corrections);
+    document.getElementById('mem-count').textContent =
+      keys.length + ' entr' + (keys.length === 1 ? 'y' : 'ies');
+
+    if (!keys.length) {
+      document.getElementById('mem-view').innerHTML =
+        '<span class="je">// No corrections recorded yet. Edit any field and click validate.</span>';
+      return;
+    }
+
+    let html = '<span style="color:var(--text-3)">{</span>\n';
+    keys.forEach((k, i) => {
+      html += `  <span class="jk">"${esc(k)}"</span>: <span class="jv">"${esc(corrections[k])}"</span>${i < keys.length - 1 ? ',' : ''}\n`;
+    });
+    html += '<span style="color:var(--text-3)">}</span>';
+    document.getElementById('mem-view').innerHTML = html;
+  }
+
+  async function clearMemory() {
+    if (!confirm('Clear all learned corrections?')) return;
+    await fetch(API + '/ocr/memory', { method: 'DELETE' });
+    await refreshMemory();
+  }
+
+  // ------------------------------------------------------------------ //
+  //  State helpers
+  // ------------------------------------------------------------------ //
+  function setResultState(state, msg) {
+    document.getElementById('empty-state').style.display    = state === 'empty'    ? 'flex' : 'none';
+    document.getElementById('scanning-state').style.display = state === 'scanning' ? 'flex' : 'none';
+    document.getElementById('error-state').style.display    = state === 'error'    ? 'flex' : 'none';
+    document.getElementById('fields-table').style.display   = state === 'table'    ? 'block': 'none';
+    document.getElementById('result-header').style.display  = state === 'table'    ? 'flex' : 'none';
+    if (state === 'error') document.getElementById('error-msg').textContent = msg || 'Extraction failed.';
+  }
+
+  function resetAll() {
+    currentFields = [];
+    document.getElementById('drop-zone').style.display = 'flex';
+    document.getElementById('preview-area').style.display = 'none';
+    document.getElementById('validate-btn').style.display = 'none';
+    document.getElementById('file-input').value = '';
+    setResultState('empty');
+  }
+
+  function esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // Prevent browser default drag behavior on the whole page
+  document.addEventListener('dragover', e => e.preventDefault());
+  document.addEventListener('drop', e => e.preventDefault());
+</script>
+</body>
+</html>
